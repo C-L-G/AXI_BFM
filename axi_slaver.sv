@@ -148,7 +148,17 @@ endtask:trans_data_task
 task automatic random_trs_data(real prop,ref int cnt);
 int     prop_key;
     prop_key = prop * 100;
-    if(sr.get_rand(1) <= prop_key)begin         
+    if(sr.get_rand(1) <= prop_key)begin
+        inf.axi_wvalid  = 1;
+        inf.axi_rdata   = rev_data[trs_addr];
+        trs_addr++;
+        cnt = cnt + 1;
+    end else begin
+        inf.axi_wvalid  = 0;
+    end
+endtask:random_trs_data
+
+
 
 
 task automatic trans_resp_task();
