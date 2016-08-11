@@ -7,7 +7,7 @@ module axi_master #(
 );
 
 function void  initial_master_info(
-    input int  id
+    input int  id=0
 );
     inf.axi_awid = id ;
     inf.axi_arid = id ;
