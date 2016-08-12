@@ -3,7 +3,8 @@ module axi_slaver #(
     parameter ASIZE = 32,
     parameter DSIZE = 64,
     parameter LSIZE = 8,
-    parameter ID    = 0
+    parameter ID    = 0,
+    parameter ADDR_STEP = 1
 )(
     axi_inf.slaver inf
 );
@@ -16,15 +17,24 @@ endtask:posedge_clk
 string rev_info;
 string trs_info;
 import SimpleRandom::*;
+import StreamFilePkg::*;
 
 semaphore   rev_seq;
 SimpleRandom sr;
 event       start_rev_event,data_rev_event,resp_trans_event;
+event       enough_data_event;
+int         enough_data_threshold = 1024;
 
 logic[ASIZE-1:0]    rev_addr,trs_addr;
 logic[DSIZE-1:0]    rev_data [bit[ASIZE-1:0]];
 int                 rev_burst_len,trs_burst_len;
 logic[1:0]          bresp_bits;
+
+integer     wdata_array [DSIZE/32-1:0];
+integer     rdata_array [DSIZE/32-1:0];
+
+assign wdata_array = {>>{inf.axi_wdata}};
+assign rdata_array = {>>{inf.axi_rdata}};
 
 initial begin
     rev_seq = new(0);
@@ -77,14 +87,16 @@ task automatic start_recieve_task();
     inf.axi_awready = 1;
     rev_addr         = inf.axi_awaddr;
     rev_burst_len    = inf.axi_awlen+1;
-    rev_data    = {};
     @(posedge inf.axi_aclk);
     inf.axi_awready = 0;
     rev_info = "addr wr done";
+    $display("AXI WRITE: ADDR=%h LENGTH=%d",rev_addr,rev_burst_len);
 endtask:start_recieve_task
 
 task automatic start_transmit_task;
     trs_info    = "start addr rd";
+    inf.axi_rlast = 0;
+    inf.axi_rvalid  = 0;
     while(1)begin
         @(posedge inf.axi_aclk);
         if(inf.axi_arvalid && (ID == inf.axi_arid))begin
@@ -97,7 +109,8 @@ task automatic start_transmit_task;
     trs_burst_len    = inf.axi_arlen+1;
     @(posedge inf.axi_aclk);
     inf.axi_arready = 0;
-    rev_info = "addr rd done";
+    trs_info = "addr rd done";
+    $display("AXI READ: ADDR=%h  LENGTH=%d",trs_addr,trs_burst_len);
 endtask:start_transmit_task
 
 task automatic rev_data_task();
@@ -109,7 +122,7 @@ int data_cnt;
         if(inf.axi_wvalid && inf.axi_wready)begin
             data_cnt++;
             rev_data[rev_addr]    = inf.axi_wdata;
-            rev_addr++;
+            rev_addr = rev_addr + ADDR_STEP;
             if(inf.axi_wlast)begin
                 bresp_bits  = 2'b00;
                 assert(data_cnt == rev_burst_len)
@@ -128,19 +141,27 @@ int data_cnt;
     repeat(10) @(posedge inf.axi_aclk);
 endtask:rev_data_task
 
+int  tmp_cnt;
 task automatic trans_data_task;
 int data_cnt;
     trs_info = "data rd";
     data_cnt = 0;
     forever begin
         wait(inf.axi_rready);
-        random_trs_data(data_cnt);
+        //--
+        inf.axi_rid     = ID;
+        inf.axi_rresp   = 2'b00;
+        //--
+        random_trs_data(0.7,data_cnt);
+        tmp_cnt = data_cnt;
         if(data_cnt == trs_burst_len)begin
             inf.axi_rlast   = 1;
+            @(posedge inf.axi_aclk);
             break;
         end
         @(posedge inf.axi_aclk);
     end
+    inf.axi_rvalid  = 0;
     inf.axi_rlast   = 0;
     trs_info = "data rd done";
 endtask:trans_data_task
@@ -149,16 +170,14 @@ task automatic random_trs_data(real prop,ref int cnt);
 int     prop_key;
     prop_key = prop * 100;
     if(sr.get_rand(1) <= prop_key)begin
-        inf.axi_wvalid  = 1;
+        inf.axi_rvalid  = 1;
         inf.axi_rdata   = rev_data[trs_addr];
-        trs_addr++;
+        trs_addr = trs_addr + ADDR_STEP;
         cnt = cnt + 1;
     end else begin
-        inf.axi_wvalid  = 0;
+        inf.axi_rvalid  = 0;
     end
 endtask:random_trs_data
-
-
 
 
 task automatic trans_resp_task();
@@ -172,6 +191,9 @@ task automatic trans_resp_task();
     inf.axi_bid     = ID;
     inf.axi_bresp   = 2'b00;
     rev_info = "resp wr done";
+    if(enough_data_threshold <= rev_data.size)begin
+        -> enough_data_event;
+    end
 endtask:trans_resp_task
 
 task  slaver_recieve_burst(int num);
@@ -186,6 +208,69 @@ task  slaver_recieve_burst(int num);
         end
     join_none
 endtask:slaver_recieve_burst
+
+task slaver_transmit_busrt(int num);
+    fork
+        repeat(num) begin
+            start_transmit_task;
+            trans_data_task;
+        end
+    join_none
+endtask:slaver_transmit_busrt
+
+//--->> save data to file <<--------
+StreamFileClass sf;
+
+task automatic save_cache_data(int split_bits=32);
+integer data [];
+logic[23:0] data_24 [];
+logic[15:0] data_16 [];
+logic[7:0]  data_8 [];
+string  str;
+int     index;
+int     KK;
+    sf = new("slaver_cache_data.txt");
+    sf.head_mark = "AXI slaver cache data";
+    index = 0;
+    foreach(rev_data[i])begin
+        str = $sformatf(">>%d<< ADDR %h : ",index,i);
+        index++;
+        sf.str_write(str);
+        case(split_bits)
+        32:begin
+            data = {>>{rev_data[i]}};
+            // sf.puts('{data});
+        end
+        24:begin
+            data_24 = {>>{rev_data[i]}};
+            data = new[data_24.size];
+            foreach(data_24[j])
+                data[j] = data_24[j];
+        end
+        16:begin
+            data_16 = {>>{rev_data[i]}};
+            data = new[data_16.size];
+            foreach(data_16[j])begin
+                data[j] = data_16[j];
+            end
+        end
+        8:begin
+            data_8 = {>>{rev_data[i]}};
+            data = new[data_8.size];
+            foreach(data_8[j])
+                data[j] = data_8[j];
+        end
+        default:;
+        endcase
+        sf.puts(data);
+    end
+    sf.close_file;
+endtask:save_cache_data
+
+task automatic wait_rev_enough_data(int num);
+    enough_data_threshold = num;
+    wait(enough_data_event.triggered);
+endtask:wait_rev_enough_data
 
 
 
