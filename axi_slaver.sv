@@ -222,7 +222,8 @@ endtask:slaver_transmit_busrt
 StreamFileClass sf;
 
 task automatic save_cache_data(int split_bits=32);
-integer data [];
+longint data [];
+logic[31:0] data_32 [];
 logic[23:0] data_24 [];
 logic[15:0] data_16 [];
 logic[7:0]  data_8 [];
@@ -238,24 +239,27 @@ int     KK;
         sf.str_write(str);
         case(split_bits)
         32:begin
-            data = {>>{rev_data[i]}};
+            data_32 = {<<32{rev_data[i]}};
+            data = new[data_32.size];
+            foreach(data_32[j])
+                data[j] = data_32[j];
             // sf.puts('{data});
         end
         24:begin
-            data_24 = {>>{rev_data[i]}};
+            data_24 = {<<24{rev_data[i]}};
             data = new[data_24.size];
             foreach(data_24[j])
                 data[j] = data_24[j];
         end
         16:begin
-            data_16 = {>>{rev_data[i]}};
+            data_16 = {<<16{rev_data[i]}};
             data = new[data_16.size];
             foreach(data_16[j])begin
                 data[j] = data_16[j];
             end
         end
         8:begin
-            data_8 = {>>{rev_data[i]}};
+            data_8 = {<<8{rev_data[i]}};
             data = new[data_8.size];
             foreach(data_8[j])
                 data[j] = data_8[j];
