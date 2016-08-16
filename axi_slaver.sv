@@ -230,6 +230,8 @@ logic[7:0]  data_8 [];
 string  str;
 int     index;
 int     KK;
+int     compact_index;
+logic[DSIZE-1:0]    tmp_data;
     sf = new("slaver_cache_data.txt");
     sf.head_mark = "AXI slaver cache data";
     index = 0;
@@ -239,27 +241,34 @@ int     KK;
         sf.str_write(str);
         case(split_bits)
         32:begin
-            data_32 = {<<32{rev_data[i]}};
+            data_32 = {>>32{rev_data[i]}};
             data = new[data_32.size];
             foreach(data_32[j])
                 data[j] = data_32[j];
             // sf.puts('{data});
         end
         24:begin
-            data_24 = {<<24{rev_data[i]}};
+            compact_index = (i / ADDR_STEP) % 3;
+            case(compact_index)
+            0: tmp_data = rev_data[i];
+            1: tmp_data = rev_data[i]<<8;
+            2: tmp_data = rev_data[i]<<16;
+            default:;
+            endcase
+            data_24 = {>>24{tmp_data[DSIZE-1-:((DSIZE/24)*24)],{tmp_data[0+:8],16'd0}}};
             data = new[data_24.size];
             foreach(data_24[j])
                 data[j] = data_24[j];
         end
         16:begin
-            data_16 = {<<16{rev_data[i]}};
+            data_16 = {>>16{rev_data[i]}};
             data = new[data_16.size];
             foreach(data_16[j])begin
                 data[j] = data_16[j];
             end
         end
         8:begin
-            data_8 = {<<8{rev_data[i]}};
+            data_8 = {>>8{rev_data[i]}};
             data = new[data_8.size];
             foreach(data_8[j])
                 data[j] = data_8[j];
