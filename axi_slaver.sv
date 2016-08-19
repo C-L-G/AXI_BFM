@@ -57,7 +57,7 @@ bit rel;
             rel = sr.get_rand(0) % 2;
             if(rel)
                     inf.axi_wready  = 1;
-            else    inf.axi_wready  = 0;
+            else    inf.axi_wready  = 1;
         end
         begin
             @(negedge inf.axi_wlast);
@@ -123,6 +123,9 @@ int data_cnt;
             data_cnt++;
             rev_data[rev_addr]    = inf.axi_wdata;
             rev_addr = rev_addr + ADDR_STEP;
+            if(enough_data_threshold <= rev_data.size)begin
+                -> enough_data_event;
+            end
             if(inf.axi_wlast)begin
                 bresp_bits  = 2'b00;
                 assert(data_cnt == rev_burst_len)
@@ -191,9 +194,6 @@ task automatic trans_resp_task();
     inf.axi_bid     = ID;
     inf.axi_bresp   = 2'b00;
     rev_info = "resp wr done";
-    if(enough_data_threshold <= rev_data.size)begin
-        -> enough_data_event;
-    end
 endtask:trans_resp_task
 
 task  slaver_recieve_burst(int num);
@@ -231,12 +231,15 @@ string  str;
 int     index;
 int     KK;
 int     compact_index;
+int     start_index,end_index;
 logic[DSIZE-1:0]    tmp_data;
     sf = new("slaver_cache_data.txt");
     sf.head_mark = "AXI slaver cache data";
     index = 0;
     foreach(rev_data[i])begin
-        str = $sformatf(">>%d<< ADDR %h : ",index,i);
+        start_index = index*(DSIZE/split_bits + (DSIZE%split_bits!=0? 1 : 0));
+        end_index   = start_index+(DSIZE/split_bits + (DSIZE%split_bits!=0? 1 : 0))-1;
+        str = $sformatf(">>%d->%d<< ADDR %h : ",start_index,end_index,i);
         index++;
         sf.str_write(str);
         case(split_bits)
