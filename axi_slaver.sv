@@ -80,7 +80,7 @@ task automatic start_recieve_task();
     while(1)begin
         @(posedge inf.axi_aclk);
         if(inf.axi_awvalid && (ID == inf.axi_awid))begin
-            @(posedge inf.axi_aclk);
+            // @(posedge inf.axi_aclk);
             break;
         end
     end
@@ -134,14 +134,14 @@ int data_cnt;
                     //$stop;
                     bresp_bits  = 2'b11;
                 end
+                @(posedge inf.axi_aclk);
                 break;
             end
         end
         @(posedge inf.axi_aclk);
     end
-    @(posedge inf.axi_aclk);
     rev_info = "data wr done";
-    repeat(10) @(posedge inf.axi_aclk);
+    // repeat(10) @(posedge inf.axi_aclk);
 endtask:rev_data_task
 
 int  tmp_cnt;
@@ -184,8 +184,8 @@ endtask:random_trs_data
 
 
 task automatic trans_resp_task();
-    rev_info = "resp wr";
     wait(inf.axi_bready);//@(posedge axi_aclk);
+    rev_info = "resp wr";
     inf.axi_bvalid  = 1'b1;
     inf.axi_bid     = ID;
     inf.axi_bresp   = bresp_bits;
