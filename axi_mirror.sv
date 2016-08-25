@@ -36,8 +36,8 @@ int                 rev_burst_len,trs_burst_len;
 integer     wdata_array [DSIZE/32-1:0];
 integer     rdata_array [DSIZE/32-1:0];
 
-assign wdata_array = {>>{inf.axi_wdata}};
-assign rdata_array = {>>{inf.axi_rdata}};
+// assign wdata_array = {>>{inf.axi_wdata}};
+// assign rdata_array = {>>{inf.axi_rdata}};
 
 task automatic start_recieve_task();
     // sr = new(0,100,3,4);
@@ -180,7 +180,7 @@ logic[DSIZE-1:0]    tmp_data;
     foreach(rev_data[i])begin
         start_index = index*(DSIZE/split_bits + (DSIZE%split_bits!=0? 1 : 0));
         end_index   = start_index+(DSIZE/split_bits + (DSIZE%split_bits!=0? 1 : 0))-1;
-        str = $sformatf(">>%d->%d<< ADDR %h : ",start_index,end_index,i);
+        $sformat(str,">>%d->%d<< ADDR %h : ",start_index,end_index,i);
         index++;
         sf.str_write(str);
         case(split_bits)
@@ -234,12 +234,12 @@ endtask:save_trs_cache_data
 
 task automatic wait_rev_enough_data(int num);
     enough_rev_data_threshold = num;
-    wait(enough_data_event.triggered);
+    @(enough_data_event);
 endtask:wait_rev_enough_data
 
 task automatic wait_trs_enough_data(int num);
     enough_trs_data_threshold = num;
-    wait(enough_trs_data_event.triggered);
+    @(enough_trs_data_event);
 endtask:wait_trs_enough_data
 
 endmodule
