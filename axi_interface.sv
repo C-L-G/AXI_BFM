@@ -249,3 +249,43 @@ input   axi_rvalid
 );
 
 endinterface:axi_inf
+
+interface axi_stream_inf #(
+    parameter DSIZE = 32
+)(
+    input bit   aclk ,
+    input bit   aresetn,
+    input bit   aclken
+);
+
+
+
+logic[DSIZE-1:0]       axi_tdata    ;
+logic                  axi_tvalid   ;
+logic                  axi_tready   ;
+logic                  axi_tuser    ;
+logic                  axi_tlast    ;
+
+modport master (
+input     aclk ,
+input     aresetn,
+input     aclken,
+output    axi_tdata   ,
+output    axi_tvalid  ,
+input     axi_tready  ,
+output    axi_tuser   ,
+output    axi_tlast
+);
+
+modport slaver (
+input    aclk ,
+input    aresetn,
+input    aclken,
+input    axi_tdata   ,
+input    axi_tvalid  ,
+output   axi_tready  ,
+input    axi_tuser   ,
+input    axi_tlast
+);
+
+endinterface:axi_stream_inf
