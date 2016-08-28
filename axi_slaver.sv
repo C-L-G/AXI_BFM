@@ -4,6 +4,7 @@ module axi_slaver #(
     parameter DSIZE = 64,
     parameter LSIZE = 8,
     parameter ID    = 0,
+    parameter LOCK_ID = "OFF",
     parameter ADDR_STEP = 1
 )(
     axi_inf.slaver inf
@@ -29,12 +30,13 @@ logic[ASIZE-1:0]    rev_addr,trs_addr;
 logic[DSIZE-1:0]    rev_data [bit[ASIZE-1:0]];
 int                 rev_burst_len,trs_burst_len;
 logic[1:0]          bresp_bits;
+int                 rev_id,trs_id;
 
 integer     wdata_array [DSIZE/32-1:0];
 integer     rdata_array [DSIZE/32-1:0];
 
-assign wdata_array = {>>{inf.axi_wdata}};
-assign rdata_array = {>>{inf.axi_rdata}};
+// assign wdata_array = {>>{inf.axi_wdata}};
+// assign rdata_array = {>>{inf.axi_rdata}};
 
 initial begin
     rev_seq = new(0);
@@ -45,31 +47,42 @@ initial begin
     inf.axi_bid     = 0;
     inf.axi_bresp   = 2'b00;
     inf.axi_wready  = 0;
+    inf.axi_arready = 0;
 end
 
 bit     rev_data_time;
 task  random_wready_task;
 bit rel;
     inf.axi_wready  = 0;
-    fork
-        forever begin:RAMNDOM_BLOCK
-            posedge_clk;
-            rel = sr.get_rand(0) % 2;
-            if(rel)
-                    inf.axi_wready  = 1;
-            else    inf.axi_wready  = 1;
-        end
-        begin
-            @(negedge inf.axi_wlast);
-            inf.axi_wready  = 0;
-        end
-        begin
-            @(posedge inf.axi_awvalid);
-            assert(inf.axi_awvalid)
-            else $warning("WRITE DATA FALSE");
-        end
-    join_any
-    disable fork;
+    // fork
+    //     forever begin:RAMNDOM_BLOCK
+    //         posedge_clk;
+    //         rel = sr.get_rand(0) % 2;
+    //         if(rel)
+    //                 inf.axi_wready  = 1;
+    //         else    inf.axi_wready  = 1;
+    //     end
+    //     begin
+    //         @(negedge inf.axi_wlast);
+    //         inf.axi_wready  = 0;
+    //     end
+    //     begin
+    //         @(posedge inf.axi_awvalid);
+    //         assert(inf.axi_awvalid)
+    //         else $warning("WRITE DATA FALSE");
+    //     end
+    // join_any
+    // disable fork;
+
+    while(!inf.axi_wlast)begin
+        rel = sr.get_rand(0) % 2;
+        if(rel)
+                inf.axi_wready  = 1;
+        else    inf.axi_wready  = 1;
+        posedge_clk;
+    end
+    inf.axi_wready  = 0;
+
 endtask:random_wready_task
 
 
@@ -77,20 +90,23 @@ task automatic start_recieve_task();
     // sr = new(0,100,3,4);
     // II = sr.randomize();
     rev_info = "start rev addr wr";
+    $display("=======REV=========");
     while(1)begin
         @(posedge inf.axi_aclk);
-        if(inf.axi_awvalid && (ID == inf.axi_awid))begin
+        if(inf.axi_awvalid)begin
+            if(ID == inf.axi_rid || LOCK_ID=="OFF")
             // @(posedge inf.axi_aclk);
-            break;
+                break;
         end
     end
     inf.axi_awready = 1;
     rev_addr         = inf.axi_awaddr;
     rev_burst_len    = inf.axi_awlen+1;
+    rev_id           = inf.axi_awid;
     @(posedge inf.axi_aclk);
     inf.axi_awready = 0;
     rev_info = "addr wr done";
-    $display("AXI WRITE: ADDR=%h LENGTH=%d",rev_addr,rev_burst_len);
+    $write("AXI WRITE: ADDR=%h LENGTH=%d.....",rev_addr,rev_burst_len);
 endtask:start_recieve_task
 
 task automatic start_transmit_task;
@@ -100,13 +116,16 @@ task automatic start_transmit_task;
     while(1)begin
         @(posedge inf.axi_aclk);
         if(inf.axi_arvalid && (ID == inf.axi_arid))begin
-            @(posedge inf.axi_aclk);
-            break;
+            if(ID == inf.axi_arid || LOCK_ID=="OFF")begin
+                @(posedge inf.axi_aclk);
+                break;
+            end
         end
     end
     inf.axi_arready = 1;
     trs_addr         = inf.axi_araddr;
     trs_burst_len    = inf.axi_arlen+1;
+    trs_id           = inf.axi_awid;
     @(posedge inf.axi_aclk);
     inf.axi_arready = 0;
     trs_info = "addr rd done";
@@ -123,7 +142,7 @@ int data_cnt;
             data_cnt++;
             rev_data[rev_addr]    = inf.axi_wdata;
             rev_addr = rev_addr + ADDR_STEP;
-            if(enough_data_threshold <= rev_data.size)begin
+            if(enough_data_threshold <= rev_data.size && enough_data_threshold != 0)begin
                 -> enough_data_event;
             end
             if(inf.axi_wlast)begin
@@ -142,6 +161,7 @@ int data_cnt;
     end
     rev_info = "data wr done";
     // repeat(10) @(posedge inf.axi_aclk);
+    $write("DONE!-->");
 endtask:rev_data_task
 
 int  tmp_cnt;
@@ -152,7 +172,7 @@ int data_cnt;
     forever begin
         wait(inf.axi_rready);
         //--
-        inf.axi_rid     = ID;
+        inf.axi_rid     = trs_id;
         inf.axi_rresp   = 2'b00;
         //--
         random_trs_data(0.7,data_cnt);
@@ -186,25 +206,31 @@ endtask:random_trs_data
 task automatic trans_resp_task();
     wait(inf.axi_bready);//@(posedge axi_aclk);
     rev_info = "resp wr";
+    $write("||AXI4 RESP.....");
     inf.axi_bvalid  = 1'b1;
-    inf.axi_bid     = ID;
+    inf.axi_bid     = rev_id;
     inf.axi_bresp   = bresp_bits;
     @(posedge inf.axi_aclk);
     inf.axi_bvalid  = 1'b0;
-    inf.axi_bid     = ID;
+    inf.axi_bid     = rev_id;
     inf.axi_bresp   = 2'b00;
     rev_info = "resp wr done";
+    $display("DONE!");
 endtask:trans_resp_task
+
+//----->> NEW REV TASK <<----------
 
 task  slaver_recieve_burst(int num);
     fork
-        repeat(num) begin
-            start_recieve_task;
-            fork
-                rev_data_task;
-                random_wready_task;
-            join
-            trans_resp_task;
+        begin:REPEAT_BLOCK
+            repeat(num) begin
+                start_recieve_task;
+                fork
+                    rev_data_task;
+                    random_wready_task;
+                join
+                trans_resp_task;
+            end
         end
     join_none
 endtask:slaver_recieve_burst
@@ -239,7 +265,7 @@ logic[DSIZE-1:0]    tmp_data;
     foreach(rev_data[i])begin
         start_index = index*(DSIZE/split_bits + (DSIZE%split_bits!=0? 1 : 0));
         end_index   = start_index+(DSIZE/split_bits + (DSIZE%split_bits!=0? 1 : 0))-1;
-        str = $sformatf(">>%d->%d<< ADDR %h : ",start_index,end_index,i);
+        $sformat(str,">>%d->%d<< ADDR %h : ",start_index,end_index,i);
         index++;
         sf.str_write(str);
         case(split_bits)
@@ -285,7 +311,7 @@ endtask:save_cache_data
 
 task automatic wait_rev_enough_data(int num);
     enough_data_threshold = num;
-    wait(enough_data_event.triggered);
+    @(enough_data_event);
 endtask:wait_rev_enough_data
 
 
