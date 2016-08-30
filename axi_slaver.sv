@@ -5,7 +5,8 @@ module axi_slaver #(
     parameter LSIZE = 8,
     parameter ID    = 0,
     parameter LOCK_ID = "OFF",
-    parameter ADDR_STEP = 1
+    parameter ADDR_STEP = 1,
+    parameter MUTEX_WR_RD = "OFF"
 )(
     axi_inf.slaver inf
 );
@@ -94,7 +95,7 @@ task automatic start_recieve_task();
     while(1)begin
         @(posedge inf.axi_aclk);
         if(inf.axi_awvalid)begin
-            if(ID == inf.axi_rid || LOCK_ID=="OFF")
+            if(ID == inf.axi_awid || LOCK_ID=="OFF")
             // @(posedge inf.axi_aclk);
                 break;
         end
@@ -105,6 +106,7 @@ task automatic start_recieve_task();
     rev_id           = inf.axi_awid;
     @(posedge inf.axi_aclk);
     inf.axi_awready = 0;
+    inf.axi_bid     = rev_id;
     rev_info = "addr wr done";
     $write("AXI WRITE: ADDR=%h LENGTH=%d.....",rev_addr,rev_burst_len);
 endtask:start_recieve_task
@@ -115,7 +117,7 @@ task automatic start_transmit_task;
     inf.axi_rvalid  = 0;
     while(1)begin
         @(posedge inf.axi_aclk);
-        if(inf.axi_arvalid && (ID == inf.axi_arid))begin
+        if(inf.axi_arvalid)begin
             if(ID == inf.axi_arid || LOCK_ID=="OFF")begin
                 @(posedge inf.axi_aclk);
                 break;
@@ -125,7 +127,7 @@ task automatic start_transmit_task;
     inf.axi_arready = 1;
     trs_addr         = inf.axi_araddr;
     trs_burst_len    = inf.axi_arlen+1;
-    trs_id           = inf.axi_awid;
+    trs_id           = inf.axi_arid;
     @(posedge inf.axi_aclk);
     inf.axi_arready = 0;
     trs_info = "addr rd done";
@@ -168,6 +170,7 @@ int  tmp_cnt;
 task automatic trans_data_task;
 int data_cnt;
     trs_info = "data rd";
+    inf.axi_rid = trs_id;
     data_cnt = 0;
     forever begin
         wait(inf.axi_rready);
@@ -204,6 +207,7 @@ endtask:random_trs_data
 
 
 task automatic trans_resp_task();
+    inf.axi_bid = rev_id;
     wait(inf.axi_bready);//@(posedge axi_aclk);
     rev_info = "resp wr";
     $write("||AXI4 RESP.....");
@@ -220,16 +224,25 @@ endtask:trans_resp_task
 
 //----->> NEW REV TASK <<----------
 
+semaphore mutex_rev_trs = new(1);
+
 task  slaver_recieve_burst(int num);
     fork
         begin:REPEAT_BLOCK
             repeat(num) begin
+                if(MUTEX_WR_RD=="ON")begin
+                    wait(inf.axi_awvalid);
+                    mutex_rev_trs.get(1);
+                end
                 start_recieve_task;
                 fork
                     rev_data_task;
                     random_wready_task;
                 join
                 trans_resp_task;
+                if(MUTEX_WR_RD=="ON")begin
+                    mutex_rev_trs.put(1);
+                end
             end
         end
     join_none
@@ -238,8 +251,15 @@ endtask:slaver_recieve_burst
 task slaver_transmit_busrt(int num);
     fork
         repeat(num) begin
+            if(MUTEX_WR_RD=="ON")begin
+                wait(inf.axi_arvalid);
+                mutex_rev_trs.get(1);
+            end
             start_transmit_task;
             trans_data_task;
+            if(MUTEX_WR_RD=="ON")begin
+                mutex_rev_trs.put(1);
+            end
         end
     join_none
 endtask:slaver_transmit_busrt

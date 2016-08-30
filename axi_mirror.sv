@@ -15,7 +15,13 @@ module axi_mirror #(
     parameter IDSIZE= 4,
     parameter LSIZE = 8,
     parameter ID    = 0,
-    parameter ADDR_STEP = 1
+    parameter LOCK_ID= "OFF",
+    parameter ADDR_STEP = 1,
+    parameter REV_SAVE_TOTAL=0,
+    parameter TRS_SAVE_TOTAL=0,
+    parameter REV_SAVE_NAME = "mirror_rev.txt",
+    parameter TRS_SAVE_NAME = "mirror_trs.txt",
+    parameter SAVE_SPLIT = 32
 )(
     axi_inf.mirror inf
 );
@@ -25,13 +31,14 @@ string rev_info;
 string trs_info;
 
 event       enough_data_event,enough_trs_data_event;
-int         enough_rev_data_threshold = 1024;
-int         enough_trs_data_threshold = 1024;
+int         enough_rev_data_threshold = REV_SAVE_TOTAL;
+int         enough_trs_data_threshold = TRS_SAVE_TOTAL;
 
 logic[ASIZE-1:0]    rev_addr,trs_addr;
 logic[DSIZE-1:0]    rev_data [bit[ASIZE-1:0]];
 logic[DSIZE-1:0]    trs_data [bit[ASIZE-1:0]];
 int                 rev_burst_len,trs_burst_len;
+int                 rev_id,trs_id;
 
 integer     wdata_array [DSIZE/32-1:0];
 integer     rdata_array [DSIZE/32-1:0];
@@ -45,13 +52,15 @@ task automatic start_recieve_task();
     while(1)begin
         @(posedge inf.axi_aclk);
         rev_info = "start rev addr wr";
-        if(inf.axi_awvalid && (ID == inf.axi_awid))begin
+        if(inf.axi_awvalid)begin
+            if(ID == inf.axi_awid || LOCK_ID=="OFF")
             // @(posedge inf.axi_aclk);
-            break;
+                break;
         end
     end
     rev_addr         = inf.axi_awaddr;
     rev_burst_len    = inf.axi_awlen+1;
+    rev_id           = inf.axi_awid;
     // @(posedge inf.axi_aclk);
     rev_info = "addr wr done";
     $display("AXI WRITE: ADDR=%h LENGTH=%d",rev_addr,rev_burst_len);
@@ -61,13 +70,15 @@ task automatic start_transmit_task;
     while(1)begin
         @(posedge inf.axi_aclk);
         trs_info    = "start addr rd";
-        if(inf.axi_arvalid && (ID == inf.axi_arid))begin
+        if(inf.axi_arvalid)begin
+            if(ID == inf.axi_arid || LOCK_ID=="OFF")
             // @(posedge inf.axi_aclk);
-            break;
+                break;
         end
     end
     trs_addr         = inf.axi_araddr;
     trs_burst_len    = inf.axi_arlen+1;
+    trs_id = inf.axi_arid;
     // @(posedge inf.axi_aclk);
     trs_info = "addr rd done";
     $display("AXI READ: ADDR=%h  LENGTH=%d",trs_addr,trs_burst_len);
@@ -85,8 +96,10 @@ int data_cnt;
             rev_cnt = data_cnt;
             rev_data[rev_addr]    = inf.axi_wdata;
             rev_addr = rev_addr + ADDR_STEP;
-            if(enough_rev_data_threshold <= rev_data.size)begin
+            if(enough_rev_data_threshold <= rev_data.size && enough_rev_data_threshold != 0)begin
                 -> enough_data_event;
+                save_rev_cache_data();
+                enough_rev_data_threshold = 0;
             end
             if(inf.axi_wlast)begin
                 assert(data_cnt == rev_burst_len)
@@ -104,6 +117,7 @@ int data_cnt;
     // repeat(10) @(posedge inf.axi_aclk);
 endtask:rev_data_task
 
+int     trans_data_cnt;
 task automatic trans_data_task;
 int data_cnt;
     data_cnt = 0;
@@ -112,16 +126,19 @@ int data_cnt;
         trs_info = "data rd";
         if(inf.axi_rvalid && inf.axi_rready)begin
             data_cnt++;
+            trans_data_cnt = data_cnt;
             trs_data[trs_addr]    = inf.axi_rdata;
             trs_addr = trs_addr + ADDR_STEP;
-            if(enough_trs_data_threshold <= trs_data.size)begin
+            if(enough_trs_data_threshold <= trs_data.size && enough_trs_data_threshold != 0)begin
                 -> enough_trs_data_event;
+                save_trs_cache_data();
+                enough_trs_data_threshold = 0;
             end
             if(inf.axi_rlast)begin
                 assert(data_cnt == trs_burst_len)
                 else begin
                     $warning("BURST REAL->%d EXPECT->%d LENGTH ERROR",data_cnt,rev_burst_len);
-                    //$stop;
+                    $stop;
                 end
                 break;
             end
@@ -224,12 +241,12 @@ logic[DSIZE-1:0]    tmp_data;
     sf.close_file;
 endtask:save_cache_data
 
-task automatic save_rev_cache_data(int split_bits=32);
-    save_cache_data("mirror_rev_data.txt",split_bits,rev_data);
+task automatic save_rev_cache_data(int split_bits=SAVE_SPLIT);
+    save_cache_data(REV_SAVE_NAME,split_bits,rev_data);
 endtask:save_rev_cache_data
 
-task automatic save_trs_cache_data(int split_bits=32);
-    save_cache_data("mirror_trs_data.txt",split_bits,trs_data);
+task automatic save_trs_cache_data(int split_bits=SAVE_SPLIT);
+    save_cache_data(TRS_SAVE_NAME,split_bits,trs_data);
 endtask:save_trs_cache_data
 
 task automatic wait_rev_enough_data(int num);
