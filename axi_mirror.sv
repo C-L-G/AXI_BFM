@@ -63,7 +63,7 @@ task automatic start_recieve_task();
     rev_id           = inf.axi_awid;
     // @(posedge inf.axi_aclk);
     rev_info = "addr wr done";
-    $display("AXI WRITE: ADDR=%h LENGTH=%d",rev_addr,rev_burst_len);
+    $display("%t,AXI WRITE: ADDR=%h LENGTH=%d",$time,rev_addr,rev_burst_len);
 endtask:start_recieve_task
 
 task automatic start_transmit_task;
@@ -81,7 +81,7 @@ task automatic start_transmit_task;
     trs_id = inf.axi_arid;
     // @(posedge inf.axi_aclk);
     trs_info = "addr rd done";
-    $display("AXI READ: ADDR=%h  LENGTH=%d",trs_addr,trs_burst_len);
+    $display("%t,AXI READ: ADDR=%h  LENGTH=%d",$time,trs_addr,trs_burst_len);
 endtask:start_transmit_task
 
 int rev_cnt;
@@ -171,9 +171,12 @@ task slaver_transmit_busrt(int num);
     fork
         repeat(num) begin
             start_transmit_task;
-            trans_data_task;
+            // fork
+                trans_data_task;
+            // join
         end
-    join_none
+    // join_none
+    join
 endtask:slaver_transmit_busrt
 
 //--->> save data to file <<--------

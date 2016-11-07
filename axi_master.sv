@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 module axi_master #(
     parameter ASIZE = 32,
     parameter DSIZE = 64,
@@ -57,7 +58,7 @@ endtask:assert_resp
 task write_addr(
     input [ASIZE-1:0]   addr,
     input int           length,
-    input [1:0]         burst_type
+    input [1:0]         burst_type = 2'b10
 );
 event get_resp;
     wait(inf.axi_resetn);
@@ -91,37 +92,37 @@ int     dlen;
     dlen = data.size();
     inf.axi_wstrb   = {(DSIZE/8){1'b1}};
     for(kk=1;kk<=length;kk++)begin
-        inf.axi_wvalid  = 1'b1;
+        inf.axi_wvalid  = #1 1'b1;
         if(kk<=dlen)
             inf.axi_wdata   = data[kk-1];
         else
             inf.axi_wdata   = data[kk%dlen];
 
         if(kk==length)
-            inf.axi_wlast   = 1'b1;
+            inf.axi_wlast   = #1 1'b1;
         @(negedge inf.axi_aclk);wait(inf.axi_wready);@(posedge inf.axi_aclk);
     end
-    reset_status;
+    #1 reset_status;
 endtask:write_data
 
 task read_addr(
     input [ASIZE-1:0]   addr,
     input int           length,
-    input [1:0]         burst_type
+    input [1:0]         burst_type= 2'b10
 );
     wait(inf.axi_resetn);
     @(posedge inf.axi_aclk);
 
     inf.axi_araddr  = addr;
     if(length != 0)
-            inf.axi_arlen   = length-1;
-    else    inf.axi_arlen   = 0;
-    inf.axi_arburst = burst_type;
-    inf.axi_arvalid = 1'b1;
+            inf.axi_arlen   = #1 length-1;
+    else    inf.axi_arlen   = #1 0;
+    inf.axi_arburst = #1 burst_type;
+    inf.axi_arvalid = #1 1'b1;
     fork
         begin
             wait(inf.axi_arready);@(posedge inf.axi_aclk);
-            inf.axi_arvalid = 1'b0;
+            inf.axi_arvalid = #1 1'b0;
         end
         // begin
         //     wait(get_resp.triggered());
@@ -129,7 +130,7 @@ task read_addr(
         //     inf.axi_bready  = 1'b0;
         // end
     join
-    reset_status;
+    #1 reset_status;
 endtask:read_addr
 
 task automatic read_data(
@@ -139,7 +140,7 @@ int     kk = 0;
     wait(inf.axi_resetn);
     @(posedge inf.axi_aclk);
 
-    inf.axi_rready  = 1'b1;
+    inf.axi_rready  = #1 1'b1;
     while(1)begin
         wait(inf.axi_rvalid);@(posedge inf.axi_aclk);
         data[kk]    = inf.axi_rdata;
@@ -148,7 +149,7 @@ int     kk = 0;
             break;
         end
     end
-    reset_status;
+    #1 reset_status;
 endtask:read_data
 
 

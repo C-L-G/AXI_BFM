@@ -54,7 +54,7 @@ end
 bit     rev_data_time;
 task  random_wready_task;
 bit rel;
-    inf.axi_wready  = 0;
+    inf.axi_wready  = #1 0;
     // fork
     //     forever begin:RAMNDOM_BLOCK
     //         posedge_clk;
@@ -78,10 +78,11 @@ bit rel;
     while(!inf.axi_wlast)begin
         rel = sr.get_rand(0) % 2;
         if(rel)
-                inf.axi_wready  = 1;
-        else    inf.axi_wready  = 1;
+                inf.axi_wready  = #1 1;
+        else    inf.axi_wready  = #1 1;
         posedge_clk;
     end
+    posedge_clk;
     inf.axi_wready  = 0;
 
 endtask:random_wready_task
@@ -113,8 +114,8 @@ endtask:start_recieve_task
 
 task automatic start_transmit_task;
     trs_info    = "start addr rd";
-    inf.axi_rlast = 0;
-    inf.axi_rvalid  = 0;
+    inf.axi_rlast = #1 0;
+    inf.axi_rvalid  = #1 0;
     while(1)begin
         @(posedge inf.axi_aclk);
         if(inf.axi_arvalid)begin
@@ -124,12 +125,12 @@ task automatic start_transmit_task;
             end
         end
     end
-    inf.axi_arready = 1;
-    trs_addr         = inf.axi_araddr;
-    trs_burst_len    = inf.axi_arlen+1;
-    trs_id           = inf.axi_arid;
+    inf.axi_arready = #1 1;
+    trs_addr         = #1 inf.axi_araddr;
+    trs_burst_len    = #1 inf.axi_arlen+1;
+    trs_id           = #1 inf.axi_arid;
     @(posedge inf.axi_aclk);
-    inf.axi_arready = 0;
+    inf.axi_arready = #1 0;
     trs_info = "addr rd done";
     $display("AXI READ: ADDR=%h  LENGTH=%d",trs_addr,trs_burst_len);
 endtask:start_transmit_task
@@ -167,7 +168,7 @@ int data_cnt;
 endtask:rev_data_task
 
 int  tmp_cnt;
-task automatic trans_data_task;
+task automatic trans_data_task(int length = 4096);
 int data_cnt;
     trs_info = "data rd";
     inf.axi_rid = trs_id;
@@ -176,19 +177,19 @@ int data_cnt;
         wait(inf.axi_rready);
         //--
         inf.axi_rid     = trs_id;
-        inf.axi_rresp   = 2'b00;
+        inf.axi_rresp   = #1 2'b00;
         //--
         random_trs_data(0.7,data_cnt);
         tmp_cnt = data_cnt;
-        if(data_cnt == trs_burst_len)begin
-            inf.axi_rlast   = 1;
+        if( ( (data_cnt == trs_burst_len) && (length >= 4096) ) || (data_cnt == length) )begin
+            inf.axi_rlast   = #1 1;
             @(posedge inf.axi_aclk);
             break;
         end
         @(posedge inf.axi_aclk);
     end
-    inf.axi_rvalid  = 0;
-    inf.axi_rlast   = 0;
+    inf.axi_rvalid  = #1 0;
+    inf.axi_rlast   = #1 0;
     trs_info = "data rd done";
 endtask:trans_data_task
 
@@ -196,12 +197,12 @@ task automatic random_trs_data(real prop,ref int cnt);
 int     prop_key;
     prop_key = prop * 100;
     if(sr.get_rand(1) <= prop_key)begin
-        inf.axi_rvalid  = 1;
-        inf.axi_rdata   = rev_data[trs_addr];
+        inf.axi_rvalid  = #1 1;
+        inf.axi_rdata   = #1 rev_data[trs_addr];
         trs_addr = trs_addr + ADDR_STEP;
         cnt = cnt + 1;
     end else begin
-        inf.axi_rvalid  = 0;
+        inf.axi_rvalid  = #1 0;
     end
 endtask:random_trs_data
 

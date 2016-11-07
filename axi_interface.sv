@@ -121,6 +121,12 @@ logic[1:0]        axi_rresp     ;
 logic             axi_rlast     ;
 logic             axi_rvalid    ;
 //---<< data read >>--------
+//--->> error flag <<-------
+logic             axi_wevld      ;
+logic[3:0]        axi_weresp     ;
+logic             axi_revld      ;
+logic[3:0]        axi_reresp     ;
+//---<< error flag >>-------
 
 modport slaver (
 input    axi_aclk     ,
@@ -161,7 +167,11 @@ output   axi_rid      ,
 output   axi_rdata    ,
 output   axi_rresp    ,
 output   axi_rlast    ,
-output   axi_rvalid
+output   axi_rvalid   ,
+input    axi_wevld    ,
+input    axi_weresp   ,
+input    axi_revld    ,
+input    axi_reresp
 );
 
 modport master (
@@ -203,7 +213,11 @@ input     axi_rid      ,
 input     axi_rdata    ,
 input     axi_rresp    ,
 input     axi_rlast    ,
-input     axi_rvalid
+input     axi_rvalid   ,
+input     axi_wevld    ,
+input     axi_weresp   ,
+input     axi_revld    ,
+input     axi_reresp
 );
 
 modport mirror (
@@ -245,7 +259,11 @@ input   axi_rid      ,
 input   axi_rdata    ,
 input   axi_rresp    ,
 input   axi_rlast    ,
-input   axi_rvalid
+input   axi_rvalid   ,
+output  axi_wevld    ,
+output  axi_weresp   ,
+output  axi_revld    ,
+output  axi_reresp
 );
 
 endinterface:axi_inf
